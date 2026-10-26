@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.0 (2026-10-26)
+
+- A new rule, `snap.input_controller`, reads the critical-error status of the
+  controller for the built-in keyboard and trackpad. A healthy Mac reads 0x0.
+  A nonzero status is Medium. Before this rule, a MacBook whose built-in
+  keyboard and trackpad stopped responding passed the input check, because
+  both devices were still in the I/O registry. That MacBook's controller read
+  0x803.
+- A new rule, `snap.lid_angle`, reads the lid angle sensor on Apple silicon
+  laptops through IOKit. The angle is shown in the Input vital. A reading under
+  20° while the lid switch reports open is Medium. A sensor that does not
+  answer is shown in the vital, but it does not get a finding. The read has a
+  3-second time limit.
+- Neither check runs when the lid is closed, the same as the presence check.
+
 ## Documentation (2026-10-21)
 
 The README has a new layout. A banner, a demo report image, and a quick start

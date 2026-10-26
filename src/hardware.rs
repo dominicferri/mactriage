@@ -1,6 +1,8 @@
-//! Hardware health: SSD wear via smartctl (bundled in MacTriage.app) and
-//! built-in keyboard / trackpad presence plus low-battery Bluetooth input devices.
+//! Hardware health: SSD wear via smartctl (bundled in MacTriage.app), built-in
+//! keyboard / trackpad presence and controller status, the lid angle sensor,
+//! and low-battery Bluetooth input devices.
 
+use crate::lidangle::LidAngle;
 use crate::report::{Evidence, Finding, Severity, Skipped, Vital};
 use crate::util::{apple_diagnostics_step, run, run_with_timeout};
 use std::path::{Path, PathBuf};
@@ -283,10 +285,20 @@ pub struct InputDevices {
     pub builtin_trackpad: bool,
     /// Bluetooth / wireless keyboards, mice and trackpads that report a battery.
     pub peripherals: Vec<(String, u8)>,
+    /// Built-in keyboard/trackpad controller status flags: ("Critical Errors",
+    /// "Critical Errors Accumulator"). None when the registry has no such entry.
+    pub controller_errors: Option<(u64, u64)>,
+    pub lid_angle: LidAngle,
 }
 
 /// Bluetooth input devices at or below this charge get flagged.
 const LOW_PERIPHERAL_BATTERY: u8 = 10;
+
+/// With the lid switch reporting open, a hinge sensor below this angle is
+/// reading wrong: nobody uses a Mac with the lid this far down.
+const LID_ANGLE_SHUT_DEGREES: u16 = 20;
+
+const BUILTIN_INPUT_PRODUCT: &str = "Apple Internal Keyboard / Trackpad";
 
 fn ioreg_dicts(xml: &str) -> Vec<plist::Dictionary> {
     if xml.trim().is_empty() {
@@ -319,7 +331,7 @@ pub fn parse_input_devices(keyboards: &str, trackpads: &str, batteries: &str) ->
     let mut dev = InputDevices {
         builtin_keyboard: ioreg_dicts(keyboards).iter().any(built_in),
         builtin_trackpad: ioreg_dicts(trackpads).iter().any(built_in),
-        peripherals: Vec::new(),
+        ..Default::default()
     };
     for d in ioreg_dicts(batteries) {
         if built_in(&d) {
@@ -350,6 +362,24 @@ pub fn parse_input_devices(keyboards: &str, trackpads: &str, batteries: &str) ->
         }
     }
     dev
+}
+
+/// Parse `ioreg -r -a -c AppleMultitouchDevice` for the built-in controller's
+/// status flags. The built-in entry carries no "Built-In" key, so it is matched
+/// by product name; an external Magic Trackpad is ignored.
+pub fn parse_controller_errors(multitouch: &str) -> Option<(u64, u64)> {
+    ioreg_dicts(multitouch)
+        .iter()
+        .filter(|d| {
+            built_in(d)
+                || d.get("Product").and_then(|v| v.as_string()) == Some(BUILTIN_INPUT_PRODUCT)
+        })
+        .filter_map(|d| {
+            let now = int(d, "Critical Errors");
+            let total = int(d, "Critical Errors Accumulator");
+            (now.is_some() || total.is_some()).then(|| (now.unwrap_or(0), total.unwrap_or(0)))
+        })
+        .reduce(|a, b| (a.0 | b.0, a.1 | b.1))
 }
 
 /// Findings and the "Input" vital for the parsed devices. `laptop` = a battery
@@ -416,6 +446,84 @@ pub fn assess_input(
             });
             findings.push(f);
         }
+        if let Some((now, total)) = dev.controller_errors {
+            let status = now | total;
+            if status == 0 {
+                parts.push("controller ✓".into());
+            } else {
+                parts.push(format!("controller errors {status:#x}"));
+                flag = flag.max(Some(Severity::Medium));
+                let mut f = Finding::new(
+                    "snap.input_controller",
+                    Severity::Medium,
+                    "hardware",
+                    &format!(
+                        "Built-in keyboard/trackpad controller reports critical errors \
+                         (status {status:#x})"
+                    ),
+                );
+                f.detail = "The controller that runs the built-in keyboard and trackpad reports \
+                            a nonzero critical-error status; a healthy Mac reads 0x0. This fits \
+                            a keyboard and trackpad that stop responding, or respond only \
+                            sometimes, while a USB or Bluetooth keyboard still works. The usual \
+                            causes are a loose or damaged keyboard/trackpad cable (check this \
+                            first after any repair inside the case), liquid damage, or a failed \
+                            keyboard/trackpad assembly."
+                    .into();
+                f.next_step = Some(format!(
+                    "Confirm with an external keyboard and mouse. Shut down fully for 30 seconds \
+                     and start up again. If the status is still nonzero: {}. If the Mac was \
+                     opened for a repair recently, have the repairer reseat the keyboard/trackpad \
+                     cable.",
+                    apple_diagnostics_step()
+                ));
+                f.evidence.push(Evidence {
+                    source: "ioreg AppleMultitouchDevice (built-in)".into(),
+                    excerpt: format!(
+                        "Critical Errors={now} ({now:#x}) Critical Errors Accumulator={total} \
+                         ({total:#x})"
+                    ),
+                });
+                findings.push(f);
+            }
+        }
+        match &dev.lid_angle {
+            LidAngle::NoSensor => {}
+            LidAngle::Unreadable(why) => parts.push(format!("lid angle unreadable ({why})")),
+            LidAngle::Degrees(degrees) => {
+                parts.push(format!("lid angle {degrees}°"));
+                if *degrees < LID_ANGLE_SHUT_DEGREES {
+                    flag = flag.max(Some(Severity::Medium));
+                    let mut f = Finding::new(
+                        "snap.lid_angle",
+                        Severity::Medium,
+                        "hardware",
+                        &format!(
+                            "Lid angle sensor reads {degrees}° while the lid switch reports open"
+                        ),
+                    );
+                    f.detail = "The hinge sensor and the lid switch disagree: the lid is open, \
+                                but the sensor reports it almost shut. A wrong angle can make the \
+                                Mac act as if the lid were closed or closing. Likely causes are \
+                                a faulty or misplaced sensor, or a replacement sensor that was \
+                                not configured after the repair."
+                        .into();
+                    f.next_step = Some(
+                        "Open the lid fully and run the check again. If the reading stays low or \
+                         does not follow the lid, have the repairer check the lid angle sensor \
+                         and run the system configuration step for the replaced part."
+                            .into(),
+                    );
+                    f.evidence.push(Evidence {
+                        source: "IOHID lid angle sensor (usage page 0x20, usage 0x8A); ioreg \
+                                 AppleClamshellState"
+                            .into(),
+                        excerpt: format!("angle={degrees}° AppleClamshellState=No"),
+                    });
+                    findings.push(f);
+                }
+            }
+        }
     } else if !dev.builtin_keyboard && !dev.builtin_trackpad {
         parts.push("no built-in keyboard/trackpad (desktop Mac)".into());
     }
@@ -471,14 +579,19 @@ pub fn input_check() -> Result<(Vec<Finding>, Vital), String> {
     let laptop = crate::power::parse_smart_battery(&battery)
         .map(|b| b.installed)
         .unwrap_or(false);
-    let dev = parse_input_devices(
+    let mut dev = parse_input_devices(
         &q(&["-r", "-a", "-c", "AppleHIDKeyboardEventDriverV2"])?,
         &q(&["-r", "-a", "-c", "AppleMultitouchTrackpadHIDEventDriver"])?,
         &q(&["-r", "-a", "-k", "BatteryPercent"])?,
     );
+    dev.controller_errors =
+        parse_controller_errors(&q(&["-r", "-a", "-c", "AppleMultitouchDevice"])?);
     let lid_closed = q(&["-r", "-k", "AppleClamshellState", "-d", "1"])?
         .lines()
         .any(|l| l.contains("\"AppleClamshellState\" = Yes"));
+    if laptop && !lid_closed {
+        dev.lid_angle = crate::lidangle::read(Duration::from_secs(3));
+    }
     Ok(assess_input(
         &dev,
         laptop,

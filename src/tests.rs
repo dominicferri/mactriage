@@ -1866,6 +1866,112 @@ fn missing_builtin_trackpad_is_flagged() {
     assert!(vital.value.contains("desktop Mac"));
 }
 
+/// AppleMultitouchDevice entries: the built-in controller has no "Built-In"
+/// key, so it is matched by product name.
+fn multitouch_xml(product: &str, now: u64, total: u64) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><array><dict>
+<key>IOClass</key><string>AppleMultitouchDevice</string>
+<key>Product</key><string>{product}</string>
+<key>Critical Errors</key><integer>{now}</integer>
+<key>Critical Errors Accumulator</key><integer>{total}</integer>
+<key>ResetCount</key><integer>0</integer>
+</dict></array></plist>"#
+    )
+}
+
+#[test]
+fn input_controller_errors_are_flagged() {
+    use crate::hardware::{assess_input, parse_controller_errors, parse_input_devices};
+    let mut dev = parse_input_devices(KBD_XML, TP_XML, "");
+    // Healthy controller (value read on a working MacBook).
+    dev.controller_errors =
+        parse_controller_errors(&multitouch_xml("Apple Internal Keyboard / Trackpad", 0, 0));
+    assert_eq!(dev.controller_errors, Some((0, 0)));
+    let (findings, vital) = assess_input(&dev, true, false, true);
+    assert!(findings.is_empty());
+    assert_eq!(
+        vital.value,
+        "built-in keyboard ✓ · trackpad ✓ · controller ✓"
+    );
+    assert_eq!(vital.flag, None);
+    // Status 0x803, read on a MacBook whose built-in keyboard and trackpad
+    // stopped responding while a USB keyboard worked.
+    dev.controller_errors = parse_controller_errors(&multitouch_xml(
+        "Apple Internal Keyboard / Trackpad",
+        2051,
+        2051,
+    ));
+    let (findings, vital) = assess_input(&dev, true, false, true);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule_id, "snap.input_controller");
+    assert_eq!(findings[0].severity, Severity::Medium);
+    assert!(findings[0].summary.contains("status 0x803"));
+    assert!(findings[0].evidence[0]
+        .excerpt
+        .contains("Critical Errors=2051 (0x803)"));
+    assert!(vital.value.contains("controller errors 0x803"));
+    assert_eq!(vital.flag, Some(Severity::Medium));
+    // An error only in the accumulator still counts.
+    dev.controller_errors =
+        parse_controller_errors(&multitouch_xml("Apple Internal Keyboard / Trackpad", 0, 16));
+    assert!(assess_input(&dev, true, false, true)
+        .1
+        .value
+        .contains("0x10"));
+    // An external Magic Trackpad's status is not the built-in controller's.
+    assert_eq!(
+        parse_controller_errors(&multitouch_xml("Magic Trackpad", 2051, 2051)),
+        None
+    );
+    assert_eq!(parse_controller_errors(""), None);
+    // Lid closed: not judged.
+    dev.controller_errors = Some((2051, 2051));
+    assert!(assess_input(&dev, true, true, true).0.is_empty());
+}
+
+#[test]
+fn lid_angle_disagreeing_with_lid_switch_is_flagged() {
+    use crate::hardware::{assess_input, parse_input_devices};
+    use crate::lidangle::{decode_report, LidAngle};
+    // Feature report 1: report ID, then the angle as little-endian u16.
+    assert_eq!(decode_report(&[0x01, 0x00, 0x00]), Some(0));
+    assert_eq!(decode_report(&[0x01, 0x70, 0x00]), Some(112));
+    assert_eq!(decode_report(&[0x01, 0x2c, 0x01]), Some(300));
+    assert_eq!(decode_report(&[0x01, 0xff, 0xff]), None);
+    assert_eq!(decode_report(&[0x01, 0x70]), None);
+
+    let mut dev = parse_input_devices(KBD_XML, TP_XML, "");
+    dev.lid_angle = LidAngle::Degrees(112);
+    let (findings, vital) = assess_input(&dev, true, false, true);
+    assert!(findings.is_empty());
+    assert_eq!(
+        vital.value,
+        "built-in keyboard ✓ · trackpad ✓ · lid angle 112°"
+    );
+
+    dev.lid_angle = LidAngle::Degrees(3);
+    let (findings, vital) = assess_input(&dev, true, false, true);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule_id, "snap.lid_angle");
+    assert_eq!(findings[0].severity, Severity::Medium);
+    assert!(findings[0].summary.contains("reads 3°"));
+    assert_eq!(vital.flag, Some(Severity::Medium));
+
+    // A sensor that does not answer is shown, not flagged.
+    dev.lid_angle = LidAngle::Unreadable("get report returned 0xe00002d8".into());
+    let (findings, vital) = assess_input(&dev, true, false, true);
+    assert!(findings.is_empty());
+    assert!(vital.value.contains("lid angle unreadable"));
+
+    // Both problems at once keep both findings.
+    dev.lid_angle = LidAngle::Degrees(0);
+    dev.controller_errors = Some((0x803, 0x803));
+    let (findings, _) = assess_input(&dev, true, false, true);
+    let ids: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+    assert_eq!(ids, ["snap.input_controller", "snap.lid_angle"]);
+}
+
 #[test]
 fn low_battery_bluetooth_input_devices() {
     use crate::hardware::{assess_input, parse_input_devices};
@@ -2002,7 +2108,13 @@ fn hardware_category_and_rules_registered() {
     );
     assert!(crate::report::Category::ALL.contains(&crate::report::Category::Hardware));
     let ids: Vec<&str> = crate::rules::RULES.iter().map(|r| r.id).collect();
-    for must in ["snap.ssd_wear", "snap.charger", "snap.input_devices"] {
+    for must in [
+        "snap.ssd_wear",
+        "snap.charger",
+        "snap.input_devices",
+        "snap.input_controller",
+        "snap.lid_angle",
+    ] {
         assert!(ids.contains(&must), "catalog missing {must}");
     }
 }

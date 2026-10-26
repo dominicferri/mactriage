@@ -9,6 +9,7 @@ mod files;
 mod hardware;
 mod host;
 mod html;
+mod lidangle;
 mod logscan;
 mod netcheck;
 mod power;

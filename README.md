@@ -87,7 +87,7 @@ Run `mactriage --help` for the full list of categories and options.
 | **Unified log: devices** | Kext load failures, USB and Thunderbolt over-current, sleep and wake failures, Wi-Fi disconnects, Bluetooth retries |
 | **Unified log: services** | Spotlight errors, Software Update failures, Time Machine errors |
 | **Vitals** | Memory pressure and swap, the top memory user, CPU load, free disk space, uptime |
-| **Hardware** | SSD wear, battery capacity and cycle count, the charger, the built-in keyboard and trackpad, Bluetooth input battery level |
+| **Hardware** | SSD wear, battery capacity and cycle count, the charger, the built-in keyboard and trackpad and their controller, the lid angle sensor, Bluetooth input battery level |
 | **Power** | Apps and services that prevent sleep |
 | **Network** | Default route, gateway, DNS, Wi-Fi signal quality |
 | **Storage and backups** | APFS local snapshots, purgeable space, the age of the last Time Machine backup |
@@ -174,7 +174,7 @@ If the pass reaches `--timeout`, mactriage stops it and keeps the lines it alrea
 These checks read the current state of the Mac. Most of them finish in less than one second each.
 
 - **Vitals:** memory pressure and swap, the top memory user, CPU load, free disk space, and uptime.
-- **Hardware:** SSD wear from the NVMe health log (through `smartctl`), and battery capacity and cycle count against the design rating. It also finds a charger that cannot supply enough power: the charger is connected, but the battery drains across two samples. It checks the built-in keyboard and trackpad. A laptop whose keyboard or trackpad is missing from the I/O registry gets a finding. This check does not run when the lid is closed. Bluetooth keyboards, mice, and trackpads at 10% battery or less also get a finding.
+- **Hardware:** SSD wear from the NVMe health log (through `smartctl`), and battery capacity and cycle count against the design rating. It also finds a charger that cannot supply enough power: the charger is connected, but the battery drains across two samples. It checks the built-in keyboard and trackpad. A laptop whose keyboard or trackpad is missing from the I/O registry gets a finding. A nonzero critical-error status from the keyboard/trackpad controller also gets a finding; a healthy Mac reads 0x0. On Apple silicon laptops it reads the lid angle sensor and flags a sensor that reads almost shut while the lid switch reports open. These checks do not run when the lid is closed. Bluetooth keyboards, mice, and trackpads at 10% battery or less also get a finding.
 - **Power:** sleep preventers from `pmset -g assertions`. When `runningboardd` holds an assertion for an app, mactriage names the app, not `runningboardd`.
 - **Network:** default route, gateway reachability, DNS, and Wi-Fi signal quality on the real Wi-Fi port.
 - **Storage and backups:** APFS local snapshots, purgeable space, and the age of the last Time Machine backup.
@@ -371,13 +371,13 @@ Set `MACTRIAGE_REPORTS_DIR` to a folder of sample reports. mactriage then reads 
 <details>
 <summary><b>Rule list</b></summary>
 
-There are 110 rules. The table splits the 39 security rules into three rows. `mactriage rules` prints each rule with its category, severity, source, and what it detects.
+There are 112 rules. The table splits the 39 security rules into three rows. `mactriage rules` prints each rule with its category, severity, source, and what it detects.
 
 | Group | Count | Rule IDs |
 |---|---|---|
 | Report files | 14 | `file.kernel_panic`, `file.jetsam`, `file.crash`, `file.user_fault`, `file.hang`, `file.shutdown_stall`, `file.gpu_restart`, `file.cpu_resource`, `file.wakeups`, `file.sleep_wake_failure`, `file.reset_count`, `file.system_watchdog`, `file.force_reset`, `file.unknown_report` |
 | Unified log | 19 | `log.shutdown_cause`, `log.crash_reported`, `log.jetsam`, `log.watchdog`, `log.thermal`, `log.io_errors`, `log.gpu_reset`, `log.launchd_services`, `log.spotlight`, `log.kext`, `log.usb_tb`, `log.sleep_wake`, `log.wifi`, `log.mdnsresponder`, `log.bluetooth`, `log.gatekeeper`, `log.keychain`, `log.software_update`, `log.backupd` |
-| Live | 21 | `snap.memory_pressure`, `snap.swap_heavy`, `snap.thermal_throttle`, `snap.disk_full`, `snap.smart`, `snap.load`, `snap.top_procs`, `snap.top_mem`, `snap.windowserver`, `snap.apfs_snapshots`, `snap.tm_stale`, `snap.ssd_wear`, `snap.battery_health`, `snap.charger`, `snap.input_devices`, `snap.power_assertions`, `snap.darkwake_storm`, `snap.net_offline`, `snap.gateway_down`, `snap.dns_failing`, `snap.wifi_quality` |
+| Live | 23 | `snap.memory_pressure`, `snap.swap_heavy`, `snap.thermal_throttle`, `snap.disk_full`, `snap.smart`, `snap.load`, `snap.top_procs`, `snap.top_mem`, `snap.windowserver`, `snap.apfs_snapshots`, `snap.tm_stale`, `snap.ssd_wear`, `snap.battery_health`, `snap.charger`, `snap.input_devices`, `snap.input_controller`, `snap.lid_angle`, `snap.power_assertions`, `snap.darkwake_storm`, `snap.net_offline`, `snap.gateway_down`, `snap.dns_failing`, `snap.wifi_quality` |
 | Audit | 5 | `audit.launch_broken`, `audit.launch_inventory`, `audit.btm_orphan`, `audit.kext_inventory`, `audit.install_history` |
 | Posture | 6 | `posture.sip_disabled`, `posture.gatekeeper_off`, `posture.filevault_off`, `posture.firewall_off`, `posture.xprotect_stale`, `posture.mdm_profiles` |
 | Security: network | 17 | `sec.wifi_open`, `sec.wifi_weak`, `sec.wifi_unknown`, `sec.firewall_stealth_off`, `sec.firewall_allow_signed`, `sec.remote_access`, `sec.listener_exposed`, `sec.listener_apple`, `sec.internet_sharing`, `sec.dns_public`, `sec.proxy_set`, `sec.hosts_redirect`, `sec.hosts_block`, `sec.traffic_extensions`, `sec.firewall_exception_risky`, `sec.firewall_exception_stale`, `sec.ssh_weak_auth` |
@@ -390,4 +390,4 @@ There are 110 rules. The table splits the 39 security rules into three rows. `ma
 
 ## History
 
-The v0.1.0 source is lost. v0.2.0 is a full rewrite that kept the same rule IDs and command line. v0.3.0 fixed trust and correctness problems. Later versions added the dashboard, the recovery assessment, the security audit, and hardware checks. Since 0.11.1, most changes tune rules that raised false alarms on real Macs. Version 0.12.0 hardened the security audit and the app launchers. See [CHANGELOG.md](CHANGELOG.md) for the reason behind each change.
+The v0.1.0 source is lost. v0.2.0 is a full rewrite that kept the same rule IDs and command line. v0.3.0 fixed trust and correctness problems. Later versions added the dashboard, the recovery assessment, the security audit, and hardware checks. Since 0.11.1, most changes tune rules that raised false alarms on real Macs. Version 0.12.0 hardened the security audit and the app launchers. Version 0.13.0 checks the keyboard/trackpad controller and the lid angle sensor. See [CHANGELOG.md](CHANGELOG.md) for the reason behind each change.

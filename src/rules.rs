@@ -60,6 +60,8 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo { id: "snap.battery_health", category: "battery", severity: "medium/high", source: "system_profiler SPPowerDataType, ioreg AppleSmartBattery", detects: "Battery service condition, capacity <80%, cycle count past the design rating" },
     RuleInfo { id: "snap.charger", category: "battery", severity: "medium", source: "ioreg AppleSmartBattery (2 samples)", detects: "Charger connected but the battery keeps draining (underpowered or failing charger/cable)" },
     RuleInfo { id: "snap.input_devices", category: "hardware", severity: "low/medium/high", source: "ioreg HID keyboard / multitouch trackpad drivers", detects: "Laptop's built-in keyboard or trackpad missing from the I/O registry; Bluetooth input devices ≤10% battery" },
+    RuleInfo { id: "snap.input_controller", category: "hardware", severity: "medium", source: "ioreg AppleMultitouchDevice (built-in)", detects: "Built-in keyboard/trackpad controller reports a nonzero critical-error status" },
+    RuleInfo { id: "snap.lid_angle", category: "hardware", severity: "medium", source: "IOHID lid angle sensor, ioreg AppleClamshellState", detects: "Lid angle sensor reads almost shut while the lid switch reports open" },
     RuleInfo { id: "snap.power_assertions", category: "battery", severity: "low", source: "pmset -g assertions", detects: "Processes preventing sleep right now (names the app behind runningboardd)" },
     RuleInfo { id: "snap.darkwake_storm", category: "battery", severity: "medium", source: "pmset -g log", detects: "≥20 dark wakes/24h — overnight battery drain" },
     RuleInfo { id: "snap.net_offline", category: "network", severity: "low", source: "route -n get default", detects: "No default route — machine is offline" },
