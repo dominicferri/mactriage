@@ -3,7 +3,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B-F4BD47?style=flat-square&logo=apple&logoColor=white&labelColor=000000" alt="Platform: macOS 12 or later">
   <img src="https://img.shields.io/badge/language-Rust-C00027?style=flat-square&logo=rust&logoColor=white&labelColor=000000" alt="Language: Rust">
-  <img src="https://img.shields.io/badge/version-0.12.0-F4BD47?style=flat-square&labelColor=000000" alt="Version 0.12.0">
+  <img src="https://img.shields.io/badge/version-0.13.0-F4BD47?style=flat-square&labelColor=000000" alt="Version 0.13.0">
+  <img src="https://img.shields.io/badge/license-MIT-C00027?style=flat-square&labelColor=000000" alt="License: MIT">
   <img src="https://img.shields.io/badge/mode-read--only-C00027?style=flat-square&labelColor=000000" alt="Mode: read-only">
 </p>
 
@@ -391,3 +392,7 @@ There are 112 rules. The table splits the 39 security rules into three rows. `ma
 ## History
 
 The v0.1.0 source is lost. v0.2.0 is a full rewrite that kept the same rule IDs and command line. v0.3.0 fixed trust and correctness problems. Later versions added the dashboard, the recovery assessment, the security audit, and hardware checks. Since 0.11.1, most changes tune rules that raised false alarms on real Macs. Version 0.12.0 hardened the security audit and the app launchers. Version 0.13.0 checks the keyboard/trackpad controller and the lid angle sensor. See [CHANGELOG.md](CHANGELOG.md) for the reason behind each change.
+
+## License
+
+mactriage uses the MIT License. See [LICENSE](LICENSE).

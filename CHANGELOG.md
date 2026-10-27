@@ -1,5 +1,11 @@
 # Changelog
 
+## Documentation (2026-10-27)
+
+The repository now has the MIT license file that `Cargo.toml` already
+declares. The README shows the 0.13.0 version and the license. No code
+changes.
+
 ## 0.13.0 (2026-10-26)
 
 - A new rule, `snap.input_controller`, reads the critical-error status of the
